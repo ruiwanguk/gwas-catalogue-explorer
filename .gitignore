@@ -13,11 +13,12 @@ wheels/
 .ipynb_checkpoints/
 
 # Data (keep structure, ignore large files)
-data/*.csv
-data/*.tsv
-data/*.gz
-data/*.zip
-!data/.gitkeep
+data/**/*.csv
+data/**/*.tsv
+data/**/*.gz
+data/**/*.zip
+data/**/*.parquet
+!data/**/.gitkeep
 
 # IDE
 .vscode/
