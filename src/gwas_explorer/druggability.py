@@ -44,7 +44,7 @@ def _query_single_target(ensembl_id: str) -> dict:
         )
         response.raise_for_status()
         return response.json()
-    except (requests.RequestException, ValueError):
+    except requests.RequestException, ValueError:
         return {}
 
 

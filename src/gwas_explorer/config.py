@@ -10,9 +10,7 @@ PROCESSED_DIR = DATA_DIR / "processed"
 RESULTS_DIR = DATA_DIR / "results"
 
 # GWAS Catalog
-GWAS_CATALOG_FTP_URL = (
-    "https://www.ebi.ac.uk/gwas/api/search/downloads/alternative"
-)
+GWAS_CATALOG_FTP_URL = "https://www.ebi.ac.uk/gwas/api/search/downloads/alternative"
 GWAS_ASSOCIATIONS_FILENAME = "gwas_catalog_associations.tsv"
 
 # T2D filtering
