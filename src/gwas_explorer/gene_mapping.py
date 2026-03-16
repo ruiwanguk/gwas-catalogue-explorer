@@ -36,23 +36,21 @@ def map_variants_to_genes(t2d_hits: pd.DataFrame) -> pd.DataFrame:
     """
     rows = []
     for _, hit in t2d_hits.iterrows():
-        gene_sources = []
-        for col in ["MAPPED_GENE", "REPORTED_GENES"]:
-            val = hit.get(col, "")
-            if pd.notna(val) and str(val).strip():
-                gene_sources.append(str(val))
-
-        if not gene_sources:
+        # Prioritize MAPPED_GENE; fall back to REPORTED_GENES only when missing
+        gene_str = hit.get("MAPPED_GENE", "")
+        if pd.isna(gene_str) or not str(gene_str).strip():
+            gene_str = hit.get("REPORTED_GENES", "")
+        if pd.isna(gene_str) or not str(gene_str).strip():
             continue
 
-        combined = " - ".join(gene_sources)
-        genes_set: set[str] = set()
-        for g in combined.replace(";", " - ").replace(",", " - ").split(" - "):
-            g = g.strip()
-            if g:
-                genes_set.add(g)
+        gene_str = str(gene_str)
+        genes = [
+            g.strip()
+            for g in gene_str.replace(";", " - ").replace(",", " - ").split(" - ")
+            if g.strip()
+        ]
 
-        for gene in genes_set:
+        for gene in genes:
             if gene:
                 rows.append(
                     {

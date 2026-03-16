@@ -1,5 +1,7 @@
 """Query Open Targets Platform for target druggability information."""
 
+import time
+
 import pandas as pd
 import requests
 
@@ -44,7 +46,7 @@ def _query_single_target(ensembl_id: str) -> dict:
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException, ValueError:
+    except (requests.RequestException, ValueError):
         return {}
 
 
@@ -97,7 +99,9 @@ def query_druggability(candidate_genes: pd.DataFrame) -> pd.DataFrame:
         Input DataFrame merged with druggability columns.
     """
     records = []
-    for _, row in candidate_genes.iterrows():
+    for i, (_, row) in enumerate(candidate_genes.iterrows()):
+        if i > 0:
+            time.sleep(0.2)  # Rate limit: 5 requests/sec max
         ensembl_id = row["ENSEMBL_ID"]
         response = _query_single_target(ensembl_id)
         drug_info = _parse_druggability(response)

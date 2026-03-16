@@ -49,7 +49,7 @@ def _get_outcome_associations(
         response.raise_for_status()
         data = response.json()
         return {d["rsid"]: d for d in data}
-    except requests.RequestException, ValueError:
+    except (requests.RequestException, ValueError):
         return {}
 
 

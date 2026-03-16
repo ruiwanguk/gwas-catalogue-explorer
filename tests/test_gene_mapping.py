@@ -27,9 +27,22 @@ def mock_ensembl_api():
         yield rsps
 
 
-def test_splits_multi_gene_entries(sample_t2d_hits: pd.DataFrame) -> None:
-    """Should split 'KCNJ11 - ABCC8' into two separate gene rows."""
+def test_prioritizes_mapped_gene(sample_t2d_hits: pd.DataFrame) -> None:
+    """Should use MAPPED_GENE when present, not REPORTED_GENES."""
     result = map_variants_to_genes(sample_t2d_hits)
+    # MAPPED_GENE for rs5219 is "KCNJ11", REPORTED_GENES is "KCNJ11 - ABCC8"
+    # Since MAPPED_GENE is present, ABCC8 should NOT appear
+    assert "KCNJ11" in result["GENE_SYMBOL"].values
+    assert "ABCC8" not in result["GENE_SYMBOL"].values
+
+
+def test_falls_back_to_reported_genes(sample_t2d_hits: pd.DataFrame) -> None:
+    """Should use REPORTED_GENES when MAPPED_GENE is missing."""
+    hits = sample_t2d_hits.copy()
+    # Clear MAPPED_GENE for the KCNJ11 row, forcing fallback to REPORTED_GENES
+    hits.loc[hits["SNP_ID"] == "rs5219", "MAPPED_GENE"] = ""
+    result = map_variants_to_genes(hits)
+    # Now ABCC8 should appear from the REPORTED_GENES fallback
     assert "KCNJ11" in result["GENE_SYMBOL"].values
     assert "ABCC8" in result["GENE_SYMBOL"].values
 
