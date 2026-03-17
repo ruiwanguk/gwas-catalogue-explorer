@@ -1,122 +1,147 @@
 # GWAS Catalogue Explorer
 
-T2D drug target identification and validation pipeline. Uses GWAS Catalog data to identify genome-wide significant variants for Type 2 Diabetes, maps them to genes, assesses druggability, runs simplified Mendelian Randomization for causal evidence, and prioritizes targets into actionable categories.
+**A demonstration pipeline for identifying potential drug targets for Type 2 Diabetes using publicly available genetic data.**
 
-## Architecture
+> **Note:** This project is for **educational and demonstration purposes only**. It illustrates how GWAS data can be used in a drug target identification workflow, but uses simplified methods and lacks the statistical rigor required for real-world research or clinical decision-making. Do not use these results to draw biological or therapeutic conclusions.
 
-The project has two layers:
+This pipeline takes genome-wide association study (GWAS) data and works through a systematic process: starting from thousands of genetic variants linked to Type 2 Diabetes (T2D), it narrows them down to a prioritized list of potential drug targets — ranked by whether they are already druggable, already targeted by existing drugs, and whether there is causal evidence linking them to the disease.
 
-- **`src/gwas_explorer/`** — Core logic modules with DataFrame-in/DataFrame-out interfaces
-- **`notebooks/`** — Step-by-step orchestration and visualization, importing from `src/`
+## Background
 
-Intermediate results are cached as parquet files in `data/` to avoid redundant downloads and reprocessing.
+### What problem does this solve?
 
-### Pipeline Flow
+Identifying new drug targets is one of the biggest bottlenecks in drug development. Genetics can help: if a genetic variant is strongly associated with a disease, the gene it affects might be a good drug target. But going from a list of thousands of GWAS "hits" to a shortlist of actionable targets requires several steps — mapping variants to genes, checking if those genes encode proteins we can actually drug, and gathering causal evidence. This pipeline automates that process for T2D.
 
-```
-GWAS Catalog (EBI FTP)
-  → download.py    Download & extract associations ZIP
-  → filter.py      Filter for T2D trait (EFO_0001360) + genome-wide significance (p < 5e-8)
-  → gene_mapping.py    Split multi-gene entries, deduplicate, resolve Ensembl IDs
-  → druggability.py    Query Open Targets GraphQL for tractability & known drugs
-  → mr_analysis.py     Simplified two-sample MR (Wald ratio / IVW) via OpenGWAS API
-  → prioritize.py      Categorize targets into four tiers
-```
+### Key concepts
 
-### Target Categories
+- **GWAS (Genome-Wide Association Study)** — Large-scale studies that scan the genome for genetic variants statistically associated with a disease or trait. A "hit" means a variant occurs more often in people with the disease than without.
+- **Genome-wide significance** — A strict statistical threshold (p < 5 × 10⁻⁸) used to filter out false positives, given the millions of variants tested.
+- **Druggability / Tractability** — Whether a protein can be targeted by a drug. Some proteins have binding pockets suitable for small molecules; others can be reached by antibodies. Many cannot be easily drugged with current technology.
+- **Mendelian Randomization (MR)** — A statistical method that uses genetic variants as "natural experiments" to test whether a gene's activity causally affects disease risk, rather than just being correlated with it.
 
-| Category | Criteria |
-|---|---|
-| **Validated** | Existing drug indicated for T2D (e.g., KCNJ11/sulfonylureas) |
-| **Repurposing candidate** | Existing drug, but for a different indication |
-| **Novel druggable** | No existing drug, but tractable protein (SM or antibody) |
-| **Novel challenging** | No existing drug, not easily tractable |
+## What the pipeline does
 
-### External APIs
-
-| Service | Purpose |
-|---|---|
-| [GWAS Catalog FTP](https://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/) | Bulk association data download |
-| [Ensembl REST API](https://rest.ensembl.org) | Gene symbol to Ensembl ID mapping |
-| [Open Targets GraphQL](https://api.platform.opentargets.org/api/v4/graphql) | Tractability assessment and known drugs |
-| [OpenGWAS API](https://api.opengwas.io/api) | SNP-exposure and SNP-outcome associations for MR |
-
-## Project Structure
+The pipeline runs six steps, each building on the last:
 
 ```
-src/gwas_explorer/
-  config.py           API endpoints, thresholds, file paths
-  http_utils.py       Retry session and rate-limited concurrent executor
-  download.py         Bulk download + ZIP extraction with staleness-based caching
-  filter.py           T2D trait + significance filtering
-  gene_mapping.py     Variant-to-gene mapping with Ensembl ID resolution
-  druggability.py     Open Targets druggability queries (concurrent)
-  mr_analysis.py      Two-sample MR analysis (concurrent)
-  prioritize.py       Target scoring and categorization
-
-notebooks/
-  01_extract_gwas_hits.ipynb
-  02_map_variants_to_genes.ipynb
-  03_druggability_lookup.ipynb
-  04_mendelian_randomization.ipynb
-  05_prioritize_targets.ipynb
-
-tests/                pytest tests with mocked HTTP (no network access)
-data/
-  raw/                Downloaded bulk files
-  processed/          Intermediate parquet files
-  results/            Final prioritization output (parquet + CSV)
+Step 1: Download       Fetch the full GWAS Catalog (~300k associations) from EBI
+Step 2: Filter         Keep only T2D-associated variants at genome-wide significance
+Step 3: Gene mapping   Map variants to their nearest genes and resolve gene IDs
+Step 4: Druggability   Check each gene against Open Targets for drug tractability
+Step 5: MR analysis    Run two-sample Mendelian Randomization for causal evidence
+Step 6: Prioritize     Assign each target to one of four categories
 ```
 
-## Getting Started
+### Target categories
 
-Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
+Each gene ends up in one of these categories:
+
+| Category | What it means | Example |
+|---|---|---|
+| **Validated** | A drug already exists for this gene *and* is used to treat T2D | KCNJ11 (targeted by sulfonylureas) |
+| **Repurposing candidate** | A drug exists but is approved for a different disease — it could potentially be repurposed for T2D | A gene targeted by an oncology drug |
+| **Novel druggable** | No drug exists yet, but the protein is tractable (small molecule or antibody) | A newly identified T2D gene with a good binding pocket |
+| **Novel challenging** | No drug exists and the protein is hard to drug with current approaches | An intracellular protein with no known binding site |
+
+## Getting started
+
+### Prerequisites
+
+- Python 3.14+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+
+### Installation
 
 ```bash
-# Install dependencies
+git clone https://github.com/ruiwanguk/gwas-catalogue-explorer.git
+cd gwas-catalogue-explorer
 uv sync
+```
 
-# Run the full pipeline
+### Run the full pipeline
+
+```bash
 uv run python main.py
+```
 
-# Or run step-by-step via notebooks
+This takes a few minutes (mostly waiting on API calls). Results are saved to `data/results/`.
+
+Options:
+```bash
+uv run python main.py --max-workers 8      # More concurrent API requests (default: 4)
+uv run python main.py --max-age-days 7      # Re-download if data is older than 7 days
+uv run python main.py --log-level DEBUG     # Verbose logging
+```
+
+### Run step-by-step with notebooks
+
+If you prefer to explore interactively, five Jupyter notebooks walk through each pipeline step with visualizations:
+
+```bash
 uv run jupyter notebook
 ```
+
+| Notebook | Step |
+|---|---|
+| `01_extract_gwas_hits.ipynb` | Download and filter GWAS data |
+| `02_map_variants_to_genes.ipynb` | Map variants to genes |
+| `03_druggability_lookup.ipynb` | Assess druggability via Open Targets |
+| `04_mendelian_randomization.ipynb` | Run Mendelian Randomization |
+| `05_prioritize_targets.ipynb` | Score and categorize targets |
+
+## Project structure
+
+```
+main.py                          CLI entry point — runs the full pipeline
+
+src/gwas_explorer/
+  config.py                      API endpoints, thresholds, file paths
+  http_utils.py                  Retry-capable HTTP session and rate-limited concurrency
+  download.py                    GWAS Catalog bulk download with caching
+  filter.py                      T2D trait and significance filtering
+  gene_mapping.py                Variant-to-gene mapping with Ensembl ID resolution
+  druggability.py                Open Targets druggability and known drug queries
+  mr_analysis.py                 Two-sample Mendelian Randomization (Wald ratio / IVW)
+  prioritize.py                  Target scoring and four-tier categorization
+
+notebooks/                       Step-by-step Jupyter notebooks with visualizations
+tests/                           pytest test suite (fully mocked, no network access)
+data/
+  raw/                           Downloaded bulk files
+  processed/                     Intermediate results (parquet)
+  results/                       Final prioritized target list (parquet + CSV)
+```
+
+## External data sources
+
+This pipeline pulls data from four public APIs — no API keys required:
+
+| Service | What it provides |
+|---|---|
+| [GWAS Catalog](https://www.ebi.ac.uk/gwas/) (EBI) | Curated catalog of genome-wide association studies |
+| [Ensembl REST API](https://rest.ensembl.org) | Gene symbol to Ensembl ID mapping |
+| [Open Targets Platform](https://platform.opentargets.org/) | Druggability/tractability assessments and known drug data |
+| [OpenGWAS](https://gwas.mrcieu.ac.uk/) (MRC IEU) | GWAS summary statistics for Mendelian Randomization |
 
 ## Development
 
 ```bash
-# Run tests
-uv run pytest
-
-# Lint and format
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
-
-# Type check
-uv run pyright src/
+uv run pytest                           # Run tests
+uv run ruff check src/ tests/           # Lint
+uv run ruff format src/ tests/          # Format
+uv run pyright src/                     # Type check
 ```
 
-## Existing Features
+## Limitations
 
-- **Bulk data download** — Downloads GWAS Catalog associations ZIP from EBI FTP with configurable staleness-based caching (default 30 days)
-- **T2D filtering** — Filters by EFO ontology term (`EFO_0001360`) and trait keywords, applies genome-wide significance threshold (p < 5e-8), deduplicates by lead SNP
-- **Gene mapping** — Splits multi-gene annotations (`;`, `,`, ` - ` delimiters), prioritizes `MAPPED_GENE` over reported genes, batch-resolves Ensembl IDs
-- **Druggability assessment** — Queries Open Targets for small molecule and antibody tractability, extracts known drugs with phase, mechanism, and indication; concurrent API requests
-- **Mendelian Randomization** — Simplified two-sample MR using OpenGWAS; Wald ratio for single instruments, inverse-variance weighted (IVW) for multiple; concurrent API requests
-- **Target prioritization** — Four-tier categorization combining druggability, drug indication matching, and MR causal evidence
-- **Notebooks** — Five Jupyter notebooks covering each pipeline step with visualizations (Manhattan-style plots, bar charts, pie charts)
-- **Test suite** — 55 pytest tests with full HTTP mocking via `responses` library; no network access during tests
+**This is an educational project, not a production-grade genetics platform.** The results should not be used for research conclusions, clinical decisions, or drug development without substantially more rigorous analysis. Key limitations:
 
-## Missing Features / Known Limitations
+- **No LD clumping** — Nearby correlated variants may inflate candidate counts
+- **Simplified MR** — Uses Wald ratio and IVW only; no pleiotropy-robust methods (MR-Egger, MR-PRESSO)
+- **No colocalization** — Cannot distinguish shared vs. distinct causal variants between GWAS and eQTL signals
+- **T2D only** — Hardcoded for Type 2 Diabetes; adapting to other diseases requires code changes
+- **No tissue-specific filtering** — Does not filter by expression in disease-relevant tissues (pancreas, liver, adipose)
 
-- **LD clumping** — No linkage disequilibrium clumping; nearby variants in the same locus may map to different genes, inflating candidate counts
-- **Colocalization** — No colocalization analysis (e.g., coloc, eCAVIAR) to distinguish shared vs. distinct causal variants between GWAS and eQTL signals
-- **eQTL integration** — No expression QTL data to link variants to gene expression changes and strengthen causal gene assignment
-- **MR diagnostics** — No MR-Egger, weighted median, or MR-PRESSO to assess pleiotropy and instrument validity; current MR is simplified
-- **Pathway enrichment** — No gene set enrichment or pathway analysis on prioritized targets
-- **Tissue-specific expression** — No filtering by pancreas/adipose/liver expression to contextualize target relevance
-- **PheWAS** — No phenome-wide association scan to assess pleiotropy risk of candidate targets
-- **Progress reporting** — No progress bars for long-running API queries (druggability and MR steps)
-- **Rate limiting** — Basic retry-with-backoff and rate-limited executor exist, but no adaptive throttling based on API response headers
-- **Multi-trait support** — Hardcoded for T2D; not configurable for other diseases without code changes
+## Disclaimer
+
+This project is provided as-is for **educational and demonstration purposes only**. It is not intended for production use, clinical decision-making, or as a basis for therapeutic development. The methods used are simplified and do not reflect the full rigor of professional genetic epidemiology or drug discovery workflows.
