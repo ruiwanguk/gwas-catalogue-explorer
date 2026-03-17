@@ -43,6 +43,7 @@ download.py → filter.py → gene_mapping.py → druggability.py → mr_analysi
 ```
 
 - `config.py` — API endpoints, thresholds (p-value, EFO terms), file paths
+- `http_utils.py` — Retry-capable requests session and `RateLimitedExecutor` for concurrent API calls
 - `download.py` — Bulk download of GWAS Catalog associations TSV with staleness-based caching
 - `filter.py` — Filters for T2D trait (EFO_0001360 + keywords) and genome-wide significance (p < 5e-8)
 - `gene_mapping.py` — Splits multi-gene entries, deduplicates, resolves Ensembl IDs via REST API

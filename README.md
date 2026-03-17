@@ -46,6 +46,7 @@ GWAS Catalog (EBI FTP)
 ```
 src/gwas_explorer/
   config.py           API endpoints, thresholds, file paths
+  http_utils.py       Retry session and rate-limited concurrent executor
   download.py         Bulk download + ZIP extraction with staleness-based caching
   filter.py           T2D trait + significance filtering
   gene_mapping.py     Variant-to-gene mapping with Ensembl ID resolution
@@ -105,7 +106,7 @@ uv run pyright src/
 - **Mendelian Randomization** — Simplified two-sample MR using OpenGWAS; Wald ratio for single instruments, inverse-variance weighted (IVW) for multiple; concurrent API requests
 - **Target prioritization** — Four-tier categorization combining druggability, drug indication matching, and MR causal evidence
 - **Notebooks** — Five Jupyter notebooks covering each pipeline step with visualizations (Manhattan-style plots, bar charts, pie charts)
-- **Test suite** — 30 pytest tests with full HTTP mocking via `responses` library; no network access during tests
+- **Test suite** — 55 pytest tests with full HTTP mocking via `responses` library; no network access during tests
 
 ## Missing Features / Known Limitations
 
@@ -117,5 +118,5 @@ uv run pyright src/
 - **Tissue-specific expression** — No filtering by pancreas/adipose/liver expression to contextualize target relevance
 - **PheWAS** — No phenome-wide association scan to assess pleiotropy risk of candidate targets
 - **Progress reporting** — No progress bars for long-running API queries (druggability and MR steps)
-- **Rate limiting** — No adaptive rate limiting or retry-with-backoff for API failures
+- **Rate limiting** — Basic retry-with-backoff and rate-limited executor exist, but no adaptive throttling based on API response headers
 - **Multi-trait support** — Hardcoded for T2D; not configurable for other diseases without code changes

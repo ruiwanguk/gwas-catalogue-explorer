@@ -5,7 +5,7 @@ import pandas as pd
 import responses
 
 from gwas_explorer.config import OPENGWAS_API_URL
-from gwas_explorer.mr_analysis import run_mr_analysis
+from gwas_explorer.mr_analysis import _harmonize_alleles, _ivw, run_mr_analysis
 
 
 @responses.activate
@@ -272,3 +272,61 @@ def test_empty_candidates_returns_empty() -> None:
         "MR_STATUS",
     }
     assert set(result.columns) == expected
+
+
+def test_palindromic_at_snp_excluded() -> None:
+    """A/T palindromic SNP with mismatched outcome alleles should return None."""
+    # Instrument is A/T (palindromic) and outcome reports unresolvable alleles
+    inst = {"rsid": "rs123", "beta": 0.3, "se": 0.05, "ea": "A", "nea": "T"}
+    out = {"rsid": "rs123", "beta": 0.1, "se": 0.02, "ea": "G", "nea": "C"}
+    result = _harmonize_alleles(inst, out)
+    assert result is None
+
+
+def test_palindromic_cg_snp_excluded() -> None:
+    """C/G palindromic SNP with mismatched outcome alleles should return None."""
+    inst = {"rsid": "rs456", "beta": 0.2, "se": 0.04, "ea": "C", "nea": "G"}
+    out = {"rsid": "rs456", "beta": 0.05, "se": 0.01, "ea": "A", "nea": "T"}
+    result = _harmonize_alleles(inst, out)
+    assert result is None
+
+
+def test_harmonize_missing_allele_passes_through() -> None:
+    """Missing allele info should pass through unchanged."""
+    inst = {"rsid": "rs789", "beta": 0.3, "se": 0.05, "ea": "A", "nea": ""}
+    out = {"rsid": "rs789", "beta": 0.1, "se": 0.02, "ea": "T", "nea": "C"}
+    result = _harmonize_alleles(inst, out)
+    assert result is out
+
+
+def test_harmonize_aligned_alleles() -> None:
+    """Already aligned alleles should return outcome unchanged."""
+    inst = {"rsid": "rs100", "beta": 0.3, "se": 0.05, "ea": "A", "nea": "G"}
+    out = {"rsid": "rs100", "beta": 0.1, "se": 0.02, "ea": "A", "nea": "G"}
+    result = _harmonize_alleles(inst, out)
+    assert result is out
+
+
+@responses.activate
+def test_ivw_excludes_palindromic_snps(sample_candidate_genes: pd.DataFrame) -> None:
+    """IVW should skip palindromic SNPs when computing the estimate."""
+    instruments = [
+        {"rsid": "rs5219", "beta": 0.3, "se": 0.05, "p": 1e-10, "ea": "T", "nea": "C"},
+        # This SNP is palindromic (A/T) with mismatched outcome alleles — should be excluded
+        {"rsid": "rs9999", "beta": 0.2, "se": 0.04, "p": 1e-8, "ea": "A", "nea": "T"},
+    ]
+    outcomes = [
+        {"rsid": "rs5219", "beta": 0.15, "se": 0.03, "p": 1e-6, "ea": "T", "nea": "C"},
+        # Outcome alleles G/C don't match instrument A/T, and instrument is palindromic
+        {"rsid": "rs9999", "beta": 0.08, "se": 0.02, "p": 0.001, "ea": "G", "nea": "C"},
+    ]
+    responses.add(responses.POST, f"{OPENGWAS_API_URL}/tophits", json=instruments, status=200)
+    responses.add(responses.POST, f"{OPENGWAS_API_URL}/associations", json=outcomes, status=200)
+
+    genes = sample_candidate_genes[sample_candidate_genes["GENE_SYMBOL"] == "KCNJ11"].copy()
+    result = run_mr_analysis(genes)
+
+    row = result.iloc[0]
+    # Palindromic SNP excluded, so only 1 instrument used — falls back to IVW with 1
+    assert row["N_INSTRUMENTS"] == 1
+    assert row["MR_STATUS"] == "ok"
