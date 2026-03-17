@@ -10,7 +10,7 @@ from gwas_explorer.gene_mapping import map_variants_to_genes
 @pytest.fixture(autouse=True)
 def mock_ensembl_api():
     """Mock Ensembl REST API for all tests to avoid real HTTP calls."""
-    with responses.RequestsMock() as rsps:
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
         rsps.add(
             responses.POST,
             "https://rest.ensembl.org/lookup/symbol/homo_sapiens",
@@ -80,3 +80,34 @@ def test_ensembl_id_lookup(sample_t2d_hits: pd.DataFrame) -> None:
     result = map_variants_to_genes(sample_t2d_hits)
     tcf = result[result["GENE_SYMBOL"] == "TCF7L2"]
     assert tcf.iloc[0]["ENSEMBL_ID"] == "ENSG00000148737"
+
+
+def test_ensembl_api_error_graceful(sample_t2d_hits: pd.DataFrame, mock_ensembl_api) -> None:
+    """Should return empty Ensembl IDs on API error, not crash."""
+    mock_ensembl_api.reset()
+    mock_ensembl_api.add(
+        responses.POST,
+        "https://rest.ensembl.org/lookup/symbol/homo_sapiens",
+        status=500,
+    )
+    result = map_variants_to_genes(sample_t2d_hits)
+    assert len(result) > 0
+    assert (result["ENSEMBL_ID"] == "").all()
+
+
+def test_all_nan_genes_returns_empty() -> None:
+    """Should return empty DataFrame when all gene columns are NaN."""
+    hits = pd.DataFrame({
+        "SNP_ID": ["rs123", "rs456"],
+        "CHR": ["1", "2"],
+        "POSITION": [100, 200],
+        "P_VALUE": [1e-10, 1e-12],
+        "OR_BETA": [1.2, 1.3],
+        "MAPPED_GENE": [float("nan"), float("nan")],
+        "REPORTED_GENES": [float("nan"), float("nan")],
+        "STUDY_ACCESSION": ["GCST001", "GCST002"],
+    })
+    result = map_variants_to_genes(hits)
+    assert len(result) == 0
+    expected = {"GENE_SYMBOL", "ENSEMBL_ID", "LEAD_SNP", "P_VALUE", "OR_BETA", "N_SUPPORTING_SNPS"}
+    assert set(result.columns) == expected

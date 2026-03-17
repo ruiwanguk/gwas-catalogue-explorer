@@ -46,3 +46,23 @@ def test_rs7903146_kept_with_best_pvalue(sample_gwas_associations: pd.DataFrame)
     row = result[result["SNP_ID"] == "rs7903146"]
     assert len(row) == 1
     assert row.iloc[0]["P_VALUE"] == 1e-30
+
+
+def test_handles_non_numeric_pvalue(sample_gwas_associations: pd.DataFrame) -> None:
+    """Should skip rows with non-numeric p-values instead of crashing."""
+    df = sample_gwas_associations.copy()
+    # Add a row with a non-numeric p-value
+    bad_row = df.iloc[0].copy()
+    bad_row["P-VALUE"] = "NS"
+    bad_row["SNPS"] = "rs_bad"
+    df = pd.concat([df, bad_row.to_frame().T], ignore_index=True)
+    result = filter_t2d_associations(df)
+    assert "rs_bad" not in result["SNP_ID"].values
+
+
+def test_handles_nan_disease_trait(sample_gwas_associations: pd.DataFrame) -> None:
+    """Should not crash when DISEASE/TRAIT is NaN."""
+    df = sample_gwas_associations.copy()
+    df.loc[0, "DISEASE/TRAIT"] = float("nan")
+    result = filter_t2d_associations(df)
+    assert len(result) > 0

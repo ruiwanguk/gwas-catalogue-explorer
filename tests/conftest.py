@@ -155,16 +155,8 @@ def mock_open_targets_response() -> dict:
                 "id": "ENSG00000187486",
                 "approvedSymbol": "KCNJ11",
                 "tractability": [
-                    {
-                        "modality": "SM",
-                        "id": "High_Quality_ChEMBL_compounds",
-                        "value": True,
-                    },
-                    {
-                        "modality": "AB",
-                        "id": "UniProt_loc_med_conf",
-                        "value": False,
-                    },
+                    {"modality": "SM", "value": True},
+                    {"modality": "AB", "value": False},
                 ],
                 "knownDrugs": {
                     "uniqueDrugs": 2,
@@ -172,7 +164,9 @@ def mock_open_targets_response() -> dict:
                         {
                             "drug": {
                                 "name": "GLIBENCLAMIDE",
-                                "mechanismOfAction": "Potassium channel blocker",
+                                "mechanismsOfAction": {
+                                    "rows": [{"mechanismOfAction": "Potassium channel blocker"}]
+                                },
                             },
                             "phase": 4,
                             "status": "Approved",
@@ -181,7 +175,9 @@ def mock_open_targets_response() -> dict:
                         {
                             "drug": {
                                 "name": "GLIMEPIRIDE",
-                                "mechanismOfAction": "Potassium channel blocker",
+                                "mechanismsOfAction": {
+                                    "rows": [{"mechanismOfAction": "Potassium channel blocker"}]
+                                },
                             },
                             "phase": 4,
                             "status": "Approved",
@@ -203,11 +199,7 @@ def mock_open_targets_novel_response() -> dict:
                 "id": "ENSG00000148737",
                 "approvedSymbol": "TCF7L2",
                 "tractability": [
-                    {
-                        "modality": "SM",
-                        "id": "High_Quality_ChEMBL_compounds",
-                        "value": False,
-                    },
+                    {"modality": "SM", "value": False},
                 ],
                 "knownDrugs": None,
             }

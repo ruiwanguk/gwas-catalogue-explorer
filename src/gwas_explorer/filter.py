@@ -1,8 +1,12 @@
 """Filter GWAS Catalog associations for T2D genome-wide significant hits."""
 
+import logging
+
 import pandas as pd
 
 from gwas_explorer.config import PVALUE_THRESHOLD, T2D_EFO_TERM, T2D_TRAIT_KEYWORDS
+
+logger = logging.getLogger(__name__)
 
 
 def filter_t2d_associations(associations: pd.DataFrame) -> pd.DataFrame:
@@ -17,15 +21,16 @@ def filter_t2d_associations(associations: pd.DataFrame) -> pd.DataFrame:
     df = associations.copy()
 
     # Filter by T2D trait: match EFO URI or keyword in disease/trait
-    trait_col = df["DISEASE/TRAIT"].str.lower()
+    trait_col = df["DISEASE/TRAIT"].fillna("").str.lower()
     uri_col = df["MAPPED_TRAIT_URI"].fillna("")
 
     is_t2d_keyword = trait_col.apply(lambda x: any(kw in x for kw in T2D_TRAIT_KEYWORDS))
     is_t2d_efo = uri_col.str.contains(T2D_EFO_TERM, na=False)
     df = df[is_t2d_keyword | is_t2d_efo]
 
-    # Filter by p-value
-    df = df[df["P-VALUE"].astype(float) < PVALUE_THRESHOLD]
+    # Filter by p-value (coerce non-numeric to NaN, which gets excluded by <)
+    df["P-VALUE"] = pd.to_numeric(df["P-VALUE"], errors="coerce")
+    df = df[df["P-VALUE"] < PVALUE_THRESHOLD]
 
     # Rename columns
     df = df.rename(
@@ -43,7 +48,6 @@ def filter_t2d_associations(associations: pd.DataFrame) -> pd.DataFrame:
 
     # Convert types
     df["POSITION"] = pd.to_numeric(df["POSITION"], errors="coerce")
-    df["P_VALUE"] = df["P_VALUE"].astype(float)
     df["OR_BETA"] = pd.to_numeric(df["OR_BETA"], errors="coerce")
 
     # Deduplicate: keep strongest p-value per SNP

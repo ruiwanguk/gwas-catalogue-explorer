@@ -1,11 +1,15 @@
 """Query Open Targets Platform for target druggability information."""
 
-import time
+import logging
 
 import pandas as pd
-import requests
 
 from gwas_explorer.config import OPEN_TARGETS_GRAPHQL_URL
+from gwas_explorer.http_utils import RateLimitedExecutor, create_session
+
+logger = logging.getLogger(__name__)
+
+_session = create_session()
 
 DRUGGABILITY_QUERY = """
 query TargetDruggability($ensemblId: String!) {
@@ -14,7 +18,6 @@ query TargetDruggability($ensemblId: String!) {
     approvedSymbol
     tractability {
       modality
-      id
       value
     }
     knownDrugs {
@@ -22,7 +25,11 @@ query TargetDruggability($ensemblId: String!) {
       rows {
         drug {
           name
-          mechanismOfAction
+          mechanismsOfAction {
+            rows {
+              mechanismOfAction
+            }
+          }
         }
         phase
         status
@@ -39,14 +46,15 @@ query TargetDruggability($ensemblId: String!) {
 def _query_single_target(ensembl_id: str) -> dict:
     """Query Open Targets for a single gene's druggability data."""
     try:
-        response = requests.post(
+        response = _session.post(
             OPEN_TARGETS_GRAPHQL_URL,
             json={"query": DRUGGABILITY_QUERY, "variables": {"ensemblId": ensembl_id}},
             timeout=30,
         )
         response.raise_for_status()
         return response.json()
-    except (requests.RequestException, ValueError):
+    except Exception:
+        logger.warning("Open Targets query failed for %s", ensembl_id)
         return {}
 
 
@@ -73,7 +81,11 @@ def _parse_druggability(response: dict) -> dict:
             drugs.append(
                 {
                     "name": row["drug"]["name"],
-                    "mechanism": row["drug"].get("mechanismOfAction", ""),
+                    "mechanism": ", ".join(
+                        r["mechanismOfAction"]
+                        for r in (row["drug"].get("mechanismsOfAction") or {}).get("rows", [])
+                        if r.get("mechanismOfAction")
+                    ) or "",
                     "phase": row.get("phase", 0),
                     "status": row.get("status", ""),
                     "indication": row.get("disease", {}).get("name", ""),
@@ -89,24 +101,34 @@ def _parse_druggability(response: dict) -> dict:
     }
 
 
-def query_druggability(candidate_genes: pd.DataFrame) -> pd.DataFrame:
+def _query_gene(gene_symbol: str, ensembl_id: str) -> dict:
+    """Query a single gene and return parsed druggability info."""
+    response = _query_single_target(ensembl_id)
+    drug_info = _parse_druggability(response)
+    drug_info["GENE_SYMBOL"] = gene_symbol
+    return drug_info
+
+
+def query_druggability(candidate_genes: pd.DataFrame, max_workers: int = 4) -> pd.DataFrame:
     """Query Open Targets for druggability of all candidate genes.
 
     Args:
         candidate_genes: DataFrame with GENE_SYMBOL and ENSEMBL_ID columns.
+        max_workers: Number of concurrent API requests (default 4).
 
     Returns:
         Input DataFrame merged with druggability columns.
     """
-    records = []
-    for i, (_, row) in enumerate(candidate_genes.iterrows()):
-        if i > 0:
-            time.sleep(0.2)  # Rate limit: 5 requests/sec max
-        ensembl_id = row["ENSEMBL_ID"]
-        response = _query_single_target(ensembl_id)
-        drug_info = _parse_druggability(response)
-        drug_info["GENE_SYMBOL"] = row["GENE_SYMBOL"]
-        records.append(drug_info)
+    if candidate_genes.empty:
+        empty = candidate_genes.copy()
+        for col in ("IS_DRUGGABLE", "TRACTABILITY_SM", "TRACTABILITY_AB", "HAS_EXISTING_DRUG"):
+            empty[col] = pd.Series(dtype=object)
+        empty["DRUGS"] = pd.Series(dtype=object)
+        return empty
+
+    genes = list(zip(candidate_genes["GENE_SYMBOL"], candidate_genes["ENSEMBL_ID"]))
+    executor = RateLimitedExecutor(max_workers=max_workers, min_delay=0.1)
+    records = executor.map(_query_gene, genes)
 
     drug_df = pd.DataFrame(records)
     result = candidate_genes.merge(drug_df, on="GENE_SYMBOL", how="left")

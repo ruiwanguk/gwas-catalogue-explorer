@@ -1,5 +1,7 @@
 """Tests for GWAS Catalog bulk download module."""
 
+import io
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,11 +11,22 @@ from gwas_explorer.config import GWAS_CATALOG_FTP_URL
 from gwas_explorer.download import download_gwas_catalog
 
 
+def _make_zip(tsv_content: str, filename: str = "associations.tsv") -> bytes:
+    """Create an in-memory ZIP containing a single TSV file."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(filename, tsv_content)
+    return buf.getvalue()
+
+
 @responses.activate
 def test_download_creates_file(tmp_path: Path) -> None:
     """Download should save TSV to the raw data directory."""
     fake_tsv = "col1\tcol2\nval1\tval2\n"
-    responses.add(responses.GET, GWAS_CATALOG_FTP_URL, body=fake_tsv, status=200)
+    responses.add(
+        responses.GET, GWAS_CATALOG_FTP_URL, body=_make_zip(fake_tsv), status=200,
+        stream=True,
+    )
 
     with patch("gwas_explorer.download.RAW_DIR", tmp_path):
         path = download_gwas_catalog()
@@ -50,7 +63,10 @@ def test_download_replaces_stale_file(tmp_path: Path) -> None:
     os.utime(existing, (old_time, old_time))
 
     fresh_tsv = "col1\tcol2\nfresh\tdata\n"
-    responses.add(responses.GET, GWAS_CATALOG_FTP_URL, body=fresh_tsv, status=200)
+    responses.add(
+        responses.GET, GWAS_CATALOG_FTP_URL, body=_make_zip(fresh_tsv), status=200,
+        stream=True,
+    )
 
     with patch("gwas_explorer.download.RAW_DIR", tmp_path):
         path = download_gwas_catalog(max_age_days=30)
